@@ -1,0 +1,7 @@
+*.tgz
+kafka/LICENSE
+kafka/NOTICE
+kafka/bin
+kafka/libs
+kafka/logs
+kafka/site-docs
