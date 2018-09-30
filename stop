@@ -1,0 +1,9 @@
+#!/bin/sh
+
+SCRIPT_PATH="`dirname \"$0\"`"
+
+cd $SCRIPT_PATH
+
+kill `cat kafka.pid`
+kill `cat zookeper.pid`
+

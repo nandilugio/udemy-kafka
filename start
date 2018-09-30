@@ -1,0 +1,12 @@
+#!/bin/sh
+
+SCRIPT_PATH="`dirname \"$0\"`"
+
+cd $SCRIPT_PATH
+
+zookeeper-server-start.sh kafka/config/zookeeper.properties >> zookeper.log &
+echo $! > zookeper.pid
+
+kafka-server-start.sh kafka/config/server.properties >> kafka.log &
+echo $! > kafka.pid
+

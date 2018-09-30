@@ -5,3 +5,7 @@ kafka/bin
 kafka/libs
 kafka/logs
 kafka/site-docs
+data
+*.log
+*.pid
+
