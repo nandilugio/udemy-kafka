@@ -108,6 +108,11 @@ Cluster
 Sharding
     Partition decided normally by key
 
+Hashing (`partitioner`)
+  Default uses `murmur2` (see https://github.com/aappleby/smhasher):
+    `targetPartition = Utils.abs(Utils.murmur2(record.key())) % numPartitions;`
+      Same key => same partition
+        Until `numPartition` changes!
 
 # Kafka CLI
 
@@ -210,23 +215,29 @@ max.in.flight.requests.per.connection= 1   Prevents ordering problems
 
 ```
 
-## Message batching
+## Message batching and buffering
 
 Producers send messages as they arrive (initially one request per message to lower the latency), limiting inflight messages to `max.in.flight.requests.per.connection`. After the limit is reached, new messages are batched to be later sent all in one request, again to minimize latency and here also to increase throughput (less message overhead and better compression ratio).
 
 In the case a producer receives messages faster than what the broker (TODO: partition?) can handle, the producer will:
   - Send `max.in.flight.requests.per.connection` requests, and stop sending until we get acks.
-  - Queue the new messages, but grouped in batches to be able to send them faster later since:
+  - Queue the new messages in a buffer, but grouped in batches to be able to send them faster later since:
     - Less request overhead (less requests per message)
     - Better compression ratio (a bigger message has more repetition that can be deduplicated)
+    Batches can be forced to be created even when in-flight requests limit is not exeeded, setting a `linger.ms` value > 0.
+  - When the buffer is full (see `buffer.memory`), make `.send()` method blocking TODO: to induce backpressure?
+  - If `.send()` needs to wait more than `max.block.ms`, an exception (TODO: which one?) is thrown in the producer. Meaning:
+    - Producer's buffer is full
+    - Broker is down or not accepting data
+    - `max.block.ms`ms have elapsed since then
 
-Batches can be forced to be created even when in-flight requests limit is not exeeded, setting a `linger.ms` value > 0.
-
-The queues are per partition (TODO: sure?) and limited by available RAM (TODO: sure?).
+TODO: queues are per partition?
 
 ```
 linger.ms= n      Allowed time to wait to build a batch. Adds to latency but yields better throughput (better compression, less requests). A full batch (see `batch.size`) will be sent immediatelly anyway.
 batch.size= nKB   Limit to the size of a batch. Defaults to 16KB but 32 or 64 can be useful. Messages bigger than this will just not be batched.
+buffer.memory=    Memory size of the buffer (request queue).
+max.block.ms= n   Time `.send()` is allowed to block before throwing an exception.
 ```
 
 TODO: monitor average batch size using Kafka Producer Metrics
