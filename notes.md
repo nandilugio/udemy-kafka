@@ -1,3 +1,5 @@
+# Notes from presentation
+
 Apache
     Kafka (core)
         PubSub messaging system
@@ -107,8 +109,6 @@ Sharding
     Partition decided normally by key
 
 
-
-
 # Kafka CLI
 
 ## Topics management
@@ -165,5 +165,93 @@ kafka-consumer-groups --bootstrap-server 127.0.0.1:9092
 [kafkatool](http://www.kafkatool.com/)
 
 [yahoo/kafka-manager](https://github.com/yahoo/kafka-manager)
+
+
+# Notable Config Options
+
+## Producer Idempotence (Kafka >= 0.11)
+
+```
+# Producer
+enable.idempotence=true
+```
+
+Adds an ID to deduplicate producer requests in the broker, in the case a broker retries because of a lost ack.
+
+Also, it implies:
+
+```
+# Producer
+acks=all
+retries=Integer.MAX_VALUE
+max.in.flight.requests= 1 (Kafka >= 0.11 & < 1.1)
+                        5 (Kafka >= 1.1) still guarantees partition ordering!
+
+```
+
+Related to this, at the broker / topic level:
+
+```
+min.insync.replicas= n    Guarantees a min ISR
+```
+
+### Fine tuning:
+
+```
+acks= 0			Don't request acks from broker. Max throughput and max data loss risk.
+      1			Request fastest ack from broker, ignoring replication state. Safeguards connection between producer and broker, but not between brokers in the cluster. TODO: acks _before_ writting to disk? makes throughput independent of disk io performance?
+		  all   Request ack from brocker, from when at least `min.insync.replicas` replicas are in-sync.
+
+retries= (int <= MAX_INT)  Retry sending messages. Me: scale to fit in memory when cluster isn't reachable.
+         1                 No retries. Better throughput if data loss is admissible.  
+
+max.in.flight.requests.per.connection= 1   Prevents ordering problems
+																			 >1  In principle better throughput if partition ordering is not required. TODO: Kafka 1.1 defaults to 5 apparently still guaranteeing partition order. True? how?
+
+```
+
+## Message batching
+
+Producers send messages as they arrive (initially one request per message to lower the latency), limiting inflight messages to `max.in.flight.requests.per.connection`. After the limit is reached, new messages are batched to be later sent all in one request, again to minimize latency and here also to increase throughput (less message overhead and better compression ratio).
+
+In the case a producer receives messages faster than what the broker (TODO: partition?) can handle, the producer will:
+  - Send `max.in.flight.requests.per.connection` requests, and stop sending until we get acks.
+  - Queue the new messages, but grouped in batches to be able to send them faster later since:
+    - Less request overhead (less requests per message)
+    - Better compression ratio (a bigger message has more repetition that can be deduplicated)
+
+Batches can be forced to be created even when in-flight requests limit is not exeeded, setting a `linger.ms` value > 0.
+
+The queues are per partition (TODO: sure?) and limited by available RAM (TODO: sure?).
+
+```
+linger.ms= n      Allowed time to wait to build a batch. Adds to latency but yields better throughput (better compression, less requests). A full batch (see `batch.size`) will be sent immediatelly anyway.
+batch.size= nKB   Limit to the size of a batch. Defaults to 16KB but 32 or 64 can be useful. Messages bigger than this will just not be batched.
+```
+
+TODO: monitor average batch size using Kafka Producer Metrics
+
+## Message/batch compression
+
+Set only at producer level. Broker stores message compressed. Consumers know they need to decompress without any config.
+
+Better to compress, or compress more as:
+  - Message is compressible (text)
+  - Message or batch is big
+  - Netwokrk is slow
+  - Broker disk space is limited
+  - Producer and consumer CPUs are able to handle the load
+
+```
+# Producer
+compression.type= none      No compression
+                  gzip      Most compression, but slower
+                  lz4       Fast, but less compression
+                  snappy    Fast, but less compression. See https://github.com/google/snappy
+```
+
+More info and benchmarks: https://blog.cloudflare.com/squeezing-the-firehose/
+
+
 
 
