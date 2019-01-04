@@ -1,5 +1,6 @@
 # Notes from presentation
 
+```
 Apache
     Kafka (core)
         PubSub messaging system
@@ -113,6 +114,7 @@ Hashing (`partitioner`)
     `targetPartition = Utils.abs(Utils.murmur2(record.key())) % numPartitions;`
       Same key => same partition
         Until `numPartition` changes!
+```
 
 # Kafka CLI
 
